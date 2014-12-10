@@ -18,15 +18,12 @@ int main()
     key_t key,key_1;
     int num_client = 0;
     int semid = 0;
-    int length_1;
     int fd;
     int msqid = 0;
     int num_msg=0;
-    struct mymsgbuf long_mess;
     long int pid = 0;
     long int t_id = 0;
     int length1 = 0;
-    int length2 = 0;
     struct mymsgbuf2 short_mess = {0};
     struct sembuf mybuf;
 
@@ -53,9 +50,11 @@ int main()
 	printf("cann't get sem\n");
 	exit(-1);
     }
-    
+
+        
     pid = getpid();
 
+    //формираем риветственное сообщение , шлем в нем свой пид
     short_mess.type = SERVER_TYPE;
     short_mess.shortmsgtype = HELLO;
     short_mess.info = pid;
@@ -73,7 +72,7 @@ int main()
     
     length1 = sizeof(struct mymsgbuf1) - sizeof(long);
     
-
+    // получаем информацию о количестве сообщений для считывания, размере матрицы, и количестве строк 
     msgrcv(msqid,&short_mess1,length1,t_id,0);
 
     int size =  short_mess1.finfo.size; 
@@ -97,36 +96,10 @@ int main()
     int *ptr1 = (int*)calloc((size*block_size-real_max*(num_msg-1)),sizeof(int));
     int *task = (int*)calloc(block_size*size+size*size,sizeof(int));
 
-    length2 = 2*sizeof(char) + (real_max+1)*sizeof(int);
+    // получаем данные для подсчета
+    client_receive_informatioin(msqid,real_max,size,block_size,task,pid,num_msg_get);
     
-    for(i=0;i<num_msg_get;i++)
-    {
-	m=i*real_max;
-
-	if(msgrcv(msqid,&long_mess,length2,pid,0)<0)
-	{
-		perror("msgsnd: ");
-		printf("pid %ld can't receive data\n",pid);
- 		exit(-1);
-	}
-
-	if((size*size+block_size*size)>real_max*(i+1))
-	{
-	    for(j=0;j<real_max;j++)
-	    {
-		task[j+m] = long_mess.info[j];
-	    } 
-	} 
-
-	else 
-	{
-	    for(j=0;j<((size*size+block_size*size)-real_max*i);j++)
-	    {
-		task[j+m] = long_mess.info[j];
-	    }
-	}
-    }
-    
+    //умножаем
     int *matrix_2 = task + size*block_size;
     int tmp=0;
 
@@ -147,7 +120,7 @@ int main()
 	    tmp = 0;
 	}
     }
-
+    //проверяем возможность доступаа к файлу
     mybuf.sem_op = -1;
     mybuf.sem_num = 0;
     mybuf.sem_flg = 0;
@@ -157,13 +130,14 @@ int main()
 	printf("can't wait for condition\n");
 	exit(-1);
     } 
-    
+    // открываем лог файл
     if((fd = open(LOG_PATH,O_WRONLY))<0)
     {
 	printf("can't open log file\n");
 	exit(-1);
     }
-
+    
+    // формируем данные для записив файл
     char buf[2*sizeof(int)];
     
     strncat(str_res,"I am client with pid ",22);
@@ -184,10 +158,10 @@ int main()
 	printf("seek error\n");
 	exit(-1);
     }
-
+    //записываем
     my_1st_write(str_res,fd);
     close(fd);
-    
+    //снимаем блокировку с доступа к файлу
     mybuf.sem_op = 1;
     mybuf.sem_num = 0;
     mybuf.sem_flg = 0;
@@ -198,7 +172,7 @@ int main()
 	printf("can't wait for condition\n");
 	exit(-1);
     }
-
+    //отправляем сообщение, что работы готова и количество сообщений
     struct mymsgbuf2 short_mess2 = {0};
 
     short_mess2.type = t_id;
@@ -213,70 +187,14 @@ int main()
 	exit(-1);
     }
 
-    int tmp1 = 0;
-
-    if(block_size*size<real_max)
-	length2 = 2*sizeof(char) + size*block_size*sizeof(int);
-   
-    else
-	length2 = 2*sizeof(char)+ (real_max+2)*sizeof(int);
-
-    struct mymsgbuf  data;
-
-    if(size*block_size<real_max)
-    { 
-	data.type = pid;
-	data.shortmsgtype = RES;
-
-	for(i=0;i<size*block_size;i++)
-	    data.info[i] = ans[i];
-	
-	if(msgsnd(msqid,&data,length2,0)<0)
-	{
-		printf("can't send msg\n");
-		exit(-1);
-	}
-    }
-   
-    else
-    {
-	int *block_task;
-	
-	while(tmp1 != size*block_size)
-	{
-
-	    if((size*block_size-tmp1)>real_max)
-	    {
-		block_task = ptr;
-
-		for(i=0;i<real_max;i++)
-		    data.info[i] = ans[i+tmp1];
-		tmp1+=real_max;
-	    }
-
-	    else
-	    {
-		block_task = ptr1;
-
-		for(i=0;i<(size*block_size-tmp1);i++)
-		    data.info[i] = ans[i+tmp1];
-		tmp1=size*block_size;
-	    }
-
-	    data.type = pid;
-	    data.shortmsgtype = RES;
-
-	    if(msgsnd(msqid,&data,length2,0)<0)
-	    {
-		printf("can't send msg\n");
-		exit(-1);
-	    }
-	}
-   }
+    // шлем результат
+    send_information_function(msqid,pid,ans,real_max, size*block_size,RES);
+    
     free(ans);
     free(str_res);
     free(ptr);
-
+    
+    //пытаемся получить прощальное сообщение
     struct mymsgbuf2 short_mess3 = {0};
        
     length1 = sizeof(struct mymsgbuf2) - sizeof(long int);
