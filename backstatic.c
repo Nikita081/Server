@@ -20,9 +20,6 @@
 #define RES 5
 #define BUF 4096
 
-
-
-
 struct mymsgbuf 
 {
     long type;
@@ -61,7 +58,6 @@ struct matrix_args
    int end;
    long int client_pid;
 };
-
 
 
 char* my_read(int fd, int size_of_rd_elem,char* string)
@@ -140,6 +136,149 @@ void my_1st_write (char* message, int fd_to)
         printf("Error with write\n");
            break;	}
 	}
-	
-	
 }
+
+void* send_information_function(int msqid,long int client_pid, int* task, int real_max, int current,int signal)
+{
+   int tmp1=0;
+   int i;
+   int length2 = 0;
+   if(current<real_max)
+	 length2 = 2*sizeof(char) + current*sizeof(int);
+
+    else
+	 length2 = 2*sizeof(char)+ (real_max+1)*sizeof(int);
+
+    struct mymsgbuf  data;
+
+    if(current<real_max)
+    {
+	data.type = client_pid;
+	data.shortmsgtype = signal;
+
+	for(i=0;i<current;i++)
+	    data.info[i] = task[i];
+	
+	if(msgsnd(msqid,&data,length2,0)<0)
+	{
+		printf("can't send msg\n");
+		exit(-1);
+	}
+    }
+
+    else
+    {
+	int *block_task;
+	
+	while(tmp1 != current)
+	{
+
+		if((current-tmp1)>real_max)
+		{
+			block_task = (int*)calloc(real_max,sizeof(int));
+
+			for(i=0;i<real_max;i++)
+			    data.info[i] = task[i+tmp1];
+
+			tmp1+=real_max; 
+		}
+
+		else
+		{
+			block_task = (int*)calloc((current-tmp1),sizeof(int));
+
+			for(i=0;i<(current-tmp1);i++)
+
+			    data.info[i] = task[i+tmp1];
+
+			tmp1=current;
+		}
+
+		data.type = client_pid;
+		data.shortmsgtype = signal;
+
+
+		if(msgsnd(msqid,&data,length2,0)<0)
+		{
+			printf("can't send msg\n");
+			exit(-1);
+		}
+
+		free(block_task);
+	}
+    }
+   return;
+}
+
+void* server_receive_informatioin(int msqid,int real_max,int size, int begin,int block_size,int* ans, long int client_pid,int num_msg)
+{
+    int length2 = 0;
+    int m,i,j;
+    struct mymsgbuf long_mess;
+
+    length2 = 2*sizeof(char) + (real_max+2)*sizeof(int);
+
+   for (i=0;i<num_msg;i++)
+   {
+	m=size*begin + i*real_max;
+
+	if(msgrcv(msqid,&long_mess,length2,client_pid,0)<0)
+	{
+	    printf("can't receive msg\n");
+	    exit(-1);
+	} 
+
+	if(((block_size*size))>real_max*(i+1))
+	{
+	    for(j=0;j<real_max;j++)
+	    {
+		ans[j+m] = long_mess.info[j];
+	    }
+	} 
+
+	else 
+	{
+	    for(j=0;j<((block_size*size)-real_max*i);j++)
+	    {
+		ans[j+m] = long_mess.info[j];
+	    }
+	}
+    }
+  return;
+}
+
+void* client_receive_informatioin(int msqid,int real_max,int size,int block_size,int* task, long int pid,int num_msg_get)
+{
+   int length2 = 0;
+    int m,i,j;
+    struct mymsgbuf long_mess;
+    length2 = 2*sizeof(char) + (real_max+1)*sizeof(int);
+    
+    for(i=0;i<num_msg_get;i++)
+    {
+	m=i*real_max;
+
+	if(msgrcv(msqid,&long_mess,length2,pid,0)<0)
+	{
+		perror("msgsnd: ");
+		printf("pid %ld can't receive data\n",pid);
+ 		exit(-1);
+	}
+
+	if((size*size+block_size*size)>real_max*(i+1))
+	{
+	    for(j=0;j<real_max;j++)
+	    {
+		task[j+m] = long_mess.info[j];
+	    } 
+	} 
+
+	else 
+	{
+	    for(j=0;j<((size*size+block_size*size)-real_max*i);j++)
+	    {
+		task[j+m] = long_mess.info[j];
+	    }
+	}
+    }
+}	
