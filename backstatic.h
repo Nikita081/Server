@@ -62,3 +62,9 @@ char* my_read(int fd, int size_of_rd_elem,char* string);
 char* my_1st_read(int fd);
 
 void my_1st_write (char* message, int fd_to);
+
+void* server_receive_informatioin(int msqid,int real_max,int size, int begin,int block_size,int* ans, long int client_pid,int num_msg);
+
+void* client_receive_informatioin(int msqid,int real_max,int size,int block_size,int* task, long int pid,int num_msg_get);
+
+void* send_information_function(int msqid, long int client_pid, int *task, int real_max, int current,int signal);
