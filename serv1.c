@@ -41,6 +41,7 @@ void* thread_client(void* pargs)
     int real_max = (int)((double)MAX/(double)sizeof(int));
     int *task;
 
+    //формируем задание
     if((end-begin)==step)
 	task = (int*)calloc(size*step*sizeof(int)+size*size*sizeof(int),1);
 
@@ -81,7 +82,7 @@ void* thread_client(void* pargs)
     else 
 	num_msg=(int)((double)current/(double)real_max)+1;
 
-
+    //формируем приветственное сообщение для клиента, в котором шлём размер матрицы, количество сообщений для считыввния, и количество строк из первой матрицы.
     struct mymsgbuf1 short_mess1 = {0};
     int length1 = sizeof(struct mymsgbuf1) - sizeof(long);
 
@@ -97,73 +98,12 @@ void* thread_client(void* pargs)
 	perror("msgsnd: ");
 	exit(-1);
     }
-
-    if(current<real_max)
-	 length2 = 2*sizeof(char) + current*sizeof(int);
-
-    else
-	 length2 = 2*sizeof(char)+ (real_max+1)*sizeof(int);
-
-    struct mymsgbuf  data;
-
-    if(current<real_max)
-    {
-	data.type = client_pid;
-	data.shortmsgtype = DOWORK;
-
-	for(i=0;i<current;i++)
-	    data.info[i] = task[i];
-	
-	if(msgsnd(msqid,&data,length2,0)<0)
-	{
-		printf("can't send msg\n");
-		exit(-1);
-	}
-    }
-
-    else
-    {
-	int *block_task;
-	
-	while(tmp1 != current)
-	{
-
-		if((current-tmp1)>real_max)
-		{
-			block_task = (int*)calloc(real_max,sizeof(int));
-
-			for(i=0;i<real_max;i++)
-			    data.info[i] = task[i+tmp1];
-
-			tmp1+=real_max; 
-		}
-
-		else
-		{
-			block_task = (int*)calloc((current-tmp1),sizeof(int));
-
-			for(i=0;i<(current-tmp1);i++)
-
-			    data.info[i] = task[i+tmp1];
-
-			tmp1=current;
-		}
-
-		data.type = client_pid;
-		data.shortmsgtype = DOWORK;
-
-
-		if(msgsnd(msqid,&data,length2,0)<0)
-		{
-			printf("can't send msg\n");
-			exit(-1);
-		}
-
-		free(block_task);
-	}
-    }
+    //отправляем данные для подсчета
+    send_information_function(msqid,client_pid,task,real_max,current,DOWORK);
+    
     free(task);
 
+    // получаем сообщений от клиента о том, что работа сделана и инфу о количестве сообщений для считывания
     struct mymsgbuf2 short_mess={0};
 
     length1 = sizeof(struct mymsgbuf2) - sizeof(long);
@@ -182,37 +122,10 @@ void* thread_client(void* pargs)
 
     num_msg = short_mess.info;
 
-    struct mymsgbuf long_mess;
-
-    length2 = 2*sizeof(char) + (real_max+2)*sizeof(int);
-
-   for (i=0;i<num_msg;i++)
-   {
-	m=size*begin + i*real_max;
-
-	if(msgrcv(msqid,&long_mess,length2,client_pid,0)<0)
-	{
-	    printf("can't receive msg\n");
-	    exit(-1);
-	} 
-
-	if(((block_size*size))>real_max*(i+1))
-	{
-	    for(j=0;j<real_max;j++)
-	    {
-		ans[j+m] = long_mess.info[j];
-	    }
-	} 
-
-	else 
-	{
-	    for(j=0;j<((block_size*size)-real_max*i);j++)
-	    {
-		ans[j+m] = long_mess.info[j];
-	    }
-	}
-    }
-   
+    //считываем результат
+    server_receive_informatioin(msqid,real_max,size,begin,block_size,ans,client_pid,num_msg);
+    
+    //прощаемся с клиентом
     struct mymsgbuf2 short_mess3={0};
    
     short_mess3.type = client_pid;
@@ -239,7 +152,6 @@ int main (int argc, char** argv)
     int length1;
     int tmp = 0;
     int fd;
-    pthread_attr_t attr;
     struct mymsgbuf2 short_mess = {0};
     struct sembuf mybuf;
 
@@ -319,14 +231,7 @@ int main (int argc, char** argv)
     int *matrix_2 = matrix + size*size;
     int *ans = (int*) allocate_matrix(size);
     int i,j;
-
-    if(pthread_attr_init(&attr)!=0)
-    {
-	printf("can't pthr attr init\n");
-	exit(-1);
-    }
     
-    pthread_attr_setdetachstate(&attr,PTHREAD_CREATE_JOINABLE);
     pthread_t thread[num_thr];
     
     step = (int)((double)size/(double)num_thr);
@@ -357,7 +262,7 @@ int main (int argc, char** argv)
 	ARG[num_client].end = (num_client==num_thr - 1) ? size : k_pos;
 	ARG[num_client].client_pid = short_mess.info;
 
-	id = pthread_create(&thread[num_client],&attr,thread_client,(void*)&ARG[num_client]);
+	id = pthread_create(&thread[num_client],NULL,thread_client,(void*)&ARG[num_client]);
 	if(id>0)
 	{
 	    printf("can't create treade %d\n",num_client);
@@ -365,9 +270,7 @@ int main (int argc, char** argv)
 	}
 	num_client++;
     }
-     
-    pthread_attr_destroy(&attr);
-    
+
     for(i=0;i<num_thr;i++)
 {
 	if(pthread_join(thread[i],NULL)>0)
